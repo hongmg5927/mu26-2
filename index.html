@@ -282,13 +282,27 @@
     const CLASSES = [5, 6, 7, 8];          // 2학년 5~8반
     const GROUPS = [1, 2, 3, 4, 5];        // 반마다 1~5조
     const ROLES = [
-      { key: 'lead', label: '총괄', desc: '공연 구성·순서 배치' },
-      { key: 'cuesheet', label: '큐시트 제작', desc: '프로그램 안내지 제작' },
-      { key: 'editor', label: '영상 편집자', desc: '제출 영상 최종 편집' }
+      { key: 'lead', label: '총괄', desc: '공연 구성·순서 배치', example: '예) 느린 곡과 빠른 곡을 번갈아 배치해 공연 흐름이 끊기지 않도록 순서를 정했다.' },
+      { key: 'cuesheet', label: '큐시트 제작', desc: '프로그램 안내지 제작', example: '예) 팀별 공연 제목과 출연자, 순서를 정리해 한눈에 보이는 프로그램 안내지를 만들었다.' },
+      { key: 'editor', label: '영상 편집자', desc: '제출 영상 최종 편집', example: '예) 팀별 영상의 소리 크기를 맞추고 자막을 넣어 하나의 공연 영상으로 편집했다.' }
     ];
     const PERF_TYPES = ['개인 노래', '개인 춤', '개인 연주', '모둠 노래', '모둠 춤', '모둠 연주', '기타 (직접 입력)'];
     const PERF_ETC = '기타 (직접 입력)';
-    const EVAL_MIN_LEN = 20; // 다른 모둠 평가 글 최소 글자 수
+    const PERF_MIN_LEN = 50; // 2번(개인 활동) 모든 칸을 더한 최소 글자 수
+    const EVAL_MIN_LEN = 50; // 4번(다른 모둠 평가) 한 모둠당 4칸을 더한 최소 글자 수
+    // 2번 아래쪽 공통 칸
+    const REFLECT_FIELDS = [
+      { key: 'difficulty', label: '어려웠던 점과 해결 과정', ph: '공연이나 연습 과정에서 어려웠던 점과, 그것을 해결하려고 어떻게 노력했는지 적어 주세요.' },
+      { key: 'episode', label: '기억에 남는 에피소드', ph: '준비하거나 공연하면서 기억에 남는 일, 친구들과 있었던 일을 적어 주세요.' },
+      { key: 'completion', label: '공연 완성도 (스스로 돌아보기)', ph: '내 공연이 얼마나 완성도 있었는지, 잘된 점과 아쉬운 점을 솔직하게 적어 주세요.' }
+    ];
+    // 4번 평가 칸
+    const EVAL_FIELDS = [
+      { key: 'art', label: '예술성', ph: '표현력, 음악·동작의 완성도, 무대의 아름다움 등' },
+      { key: 'orig', label: '독창성', ph: '새로운 아이디어, 그 모둠만의 개성 등' },
+      { key: 'improve', label: '개선점', ph: '더 좋아지려면 무엇을 바꾸면 좋을지' },
+      { key: 'etc', label: '기타 의견', ph: '응원, 인상 깊었던 장면 등 하고 싶은 말' }
+    ];
 
     // 채점 기준 (점수 선택지)
     const SCORE_ITEMS = [
@@ -301,6 +315,7 @@
 
     const groupKey = function(c, g) { return c + '-' + g; };
     const isNum = function(v) { return typeof v === 'number' && isFinite(v); };
+    const tlen = function(v) { return String(v || '').trim().length; };
 
     // 학번으로 반 짐작하기 (예: 2514 → 5반, 20514 → 5반). 맞지 않으면 null
     function guessClassFromId(id) {
@@ -317,13 +332,23 @@
       return m ? m[1] : null;
     }
 
+    // 선생님이 쉼표로 적은 조원 이름 → 이름 목록
+    function splitMembers(text) {
+      return String(text || '').split(/[,，、\n]+/).map(function(x) { return x.trim(); }).filter(function(x) { return x; })
+        .filter(function(x, i, arr) { return arr.indexOf(x) === i; });
+    }
+
     function emptyAct() {
       return {
         roles: { lead: false, cuesheet: false, editor: false },
-        roleDetail: '',
-        perfType: '',
-        perfTypeEtc: '',
+        roleDetails: { lead: '', cuesheet: '', editor: '' },
+        perfTypes: [],
+        perfEtc: '',
+        perfDetails: {},
         difficulty: '',
+        episode: '',
+        completion: '',
+        peerChecks: {},
         peerIssue: '',
         evals: {}
       };
@@ -334,9 +359,49 @@
       return ROLES.filter(function(x) { return r[x.key]; }).map(function(x) { return x.label; });
     }
 
+    function perfTypeName(t, act) {
+      return t === PERF_ETC ? ('기타: ' + ((act && act.perfEtc) || '')) : t;
+    }
     function perfTypeText(act) {
-      if (!act || !act.perfType) return '';
-      return act.perfType === PERF_ETC ? ('기타: ' + (act.perfTypeEtc || '')) : act.perfType;
+      if (!act || !act.perfTypes || !act.perfTypes.length) return '';
+      return act.perfTypes.map(function(t) { return perfTypeName(t, act); }).join(', ');
+    }
+
+    // 2번 전체 글자 수 (고른 형태의 공연 내용·과정 + 공통 3칸)
+    function perfTextLength(act) {
+      if (!act) return 0;
+      let n = 0;
+      (act.perfTypes || []).forEach(function(t) {
+        const d = (act.perfDetails || {})[t] || {};
+        n += tlen(d.what) + tlen(d.process);
+      });
+      REFLECT_FIELDS.forEach(function(f) { n += tlen(act[f.key]); });
+      return n;
+    }
+
+    // 다른 모둠 평가 한 개의 글자 수 (4칸 합계)
+    function evalTextLength(ev) {
+      if (!ev) return 0;
+      return EVAL_FIELDS.reduce(function(n, f) { return n + tlen(ev[f.key]); }, 0);
+    }
+    function evalHasContent(ev) {
+      return !!ev && (!!ev.stars || evalTextLength(ev) > 0);
+    }
+    // 평가 4칸을 한 글로 (엑셀·목록용)
+    function evalJoined(ev) {
+      if (!ev) return '';
+      return EVAL_FIELDS.filter(function(f) { return tlen(ev[f.key]); }).map(function(f) { return '[' + f.label + '] ' + String(ev[f.key]).trim(); }).join('\n');
+    }
+
+    // 모둠원 평가 (체크한 친구 + 이유, 직접 쓴 내용) → 한 글
+    function peerText(act) {
+      if (!act) return '';
+      const out = [];
+      Object.keys(act.peerChecks || {}).forEach(function(name) {
+        out.push(name + ': ' + String(act.peerChecks[name] || '').trim());
+      });
+      if (tlen(act.peerIssue)) out.push(String(act.peerIssue).trim());
+      return out.join('\n');
     }
 
     // 다른 모둠 목록 (내 조 제외)
@@ -394,8 +459,8 @@
         if (!s || Number(s.classNo) !== Number(c) || Number(s.groupNo) === Number(g)) return;
         const act = s.reports && s.reports.act;
         const ev = act && act.evals && act.evals[String(g)];
-        if (!ev || (!ev.stars && !(ev.text || '').trim())) return;
-        out.push({ studentId: s.studentId || id, studentName: s.studentName || '', fromGroup: s.groupNo, stars: ev.stars || 0, text: ev.text || '', submitted: !!act.isSubmitted });
+        if (!evalHasContent(ev)) return;
+        out.push({ studentId: s.studentId || id, studentName: s.studentName || '', fromGroup: s.groupNo, stars: ev.stars || 0, ev: ev, submitted: !!act.isSubmitted });
       });
       out.sort(function(a, b) { return String(a.studentId).localeCompare(String(b.studentId), 'ko', { numeric: true }); });
       return out;
@@ -439,7 +504,7 @@
       // 2) 활동 기록 (학생 한 명당 한 줄, 노란 칸 = 최종 제출 안 한 작성 중 내용)
       const head = [
         ['학번', 9], ['성명', 10], ['반', 5], ['조', 5], ['상태', 16], ['최종 제출 시각', 22], ['마지막 저장 시각', 22],
-        ['1. 맡은 역할', 16], ['1. 역할 활동 내용', 34], ['2. 공연 형태', 14], ['2. 어려웠던 점', 40], ['3. 모둠원 평가 (교사만)', 30],
+        ['1. 맡은 역할', 16], ['1. 역할 활동 내용', 40], ['2. 공연 형태', 18], ['2. 공연 내용과 준비 과정', 50], ['2. 어려웠던 점과 해결 과정', 40], ['2. 기억에 남는 에피소드', 40], ['2. 공연 완성도', 40], ['3. 모둠원 평가 (교사만)', 30],
         ['4. 다른 모둠 평가 수', 10],
         ['공연 기획하기(20)', 10], ['공연하기(30)', 10], ['공연 참여 과정(10)', 10], ['감상평 작성하기(40)', 10], ['합계(100)', 10],
         ['채점 시각', 22], ['학생에게 보여 준 코멘트', 30], ['점수 확정', 26], ['세특 메모 (교사만)', 34]
@@ -454,12 +519,17 @@
         const sc = computeScores(sub, groupInfo);
         const ind = (sub.grading && sub.grading.ind) || {};
         const conf = getConfirmed(sub);
-        const evalCount = act && act.evals ? Object.keys(act.evals).filter(function(k) { const x = act.evals[k]; return x && (x.stars || (x.text || '').trim()); }).length : 0;
+        const evalCount = act && act.evals ? Object.keys(act.evals).filter(function(k) { return Number(k) !== Number(sub.groupNo) && evalHasContent(act.evals[k]); }).length : 0;
+        const roleText = act ? ROLES.filter(function(r) { return act.roles && act.roles[r.key]; }).map(function(r) { return '[' + r.label + '] ' + String(((act.roleDetails || {})[r.key]) || '').trim(); }).join('\n') : '';
+        const perfText = act ? (act.perfTypes || []).map(function(t) {
+          const d = (act.perfDetails || {})[t] || {};
+          return '[' + perfTypeName(t, act) + '] 공연: ' + String(d.what || '').trim() + ' / 과정: ' + String(d.process || '').trim();
+        }).join('\n') : '';
         acts.rows.push([
           idCell(sub.studentId, draft ? 5 : 4), T(sub.studentName || ''), N(sub.classNo), N(sub.groupNo),
           { v: st.kind === 'none' ? '작성 전' : st.kind === 'draft' ? '작성 중 (미제출)' : st.label, s: draft ? 6 : 2 },
           T(act && act.isSubmitted ? act.updatedAt : ''), T(act ? act.updatedAt : ''),
-          T(roleLabels(act).join(', ')), T(act ? act.roleDetail : ''), T(perfTypeText(act)), T(act ? act.difficulty : ''), T(act ? act.peerIssue : ''),
+          T(roleLabels(act).join(', ')), T(roleText), T(perfTypeText(act)), T(perfText), T(act ? act.difficulty : ''), T(act ? act.episode : ''), T(act ? act.completion : ''), T(peerText(act)),
           N(act ? evalCount : ''),
           N(sc.plan), N(sc.perform), N(sc.participation), N(sc.review), N(sc.any ? sc.total : ''),
           T(ind.gradedAt || ''), T(ind.comment || ''), T(conf ? '확정 (' + conf.at + ')' : '미확정'), T((sub.grading && sub.grading.teacherFeedback) || '')
@@ -467,8 +537,9 @@
       });
 
       // 3) 상호평가 (평가 한 건당 한 줄)
-      const evals = { name: '상호평가', widths: [9, 10, 5, 8, 8, 22, 7, 60, 12], rows: [[
-        H('평가한 학생 학번'), H('성명'), H('반'), H('평가자 조'), H('평가 대상 조'), H('대상 공연 제목'), H('별점(5)'), H('종합 평가 (예술성·독창성·개선점)'), H('상태')
+      const evals = { name: '상호평가', widths: [9, 10, 5, 8, 8, 22, 7, 36, 36, 36, 36, 8, 12], rows: [[
+        H('평가한 학생 학번'), H('성명'), H('반'), H('평가자 조'), H('평가 대상 조'), H('대상 공연 제목'), H('별점(5)'),
+        H('예술성'), H('독창성'), H('개선점'), H('기타 의견'), H('글자 수'), H('상태')
       ]] };
       list.forEach(function(sub) {
         const act = sub.reports && sub.reports.act;
@@ -476,15 +547,17 @@
         const draft = !act.isSubmitted;
         Object.keys(act.evals).sort().forEach(function(k) {
           const x = act.evals[k];
-          if (!x || (!x.stars && !(x.text || '').trim())) return;
+          if (!evalHasContent(x)) return;
           if (Number(k) === Number(sub.groupNo)) return;
           const gi = (groupInfo || {})[groupKey(sub.classNo, k)] || {};
           evals.rows.push([
             idCell(sub.studentId, draft ? 5 : 4), { v: sub.studentName || '', s: draft ? 3 : 2 },
             { v: blank(sub.classNo), s: draft ? 5 : 4 }, { v: blank(sub.groupNo), s: draft ? 5 : 4 }, { v: Number(k), s: draft ? 5 : 4 },
-            { v: gi.title || '', s: draft ? 3 : 2 }, { v: x.stars || '', s: draft ? 5 : 4 }, { v: x.text || '', s: draft ? 3 : 2 },
+            { v: gi.title || '', s: draft ? 3 : 2 }, { v: x.stars || '', s: draft ? 5 : 4 }]
+            .concat(EVAL_FIELDS.map(function(f) { return { v: x[f.key] || '', s: draft ? 3 : 2 }; }))
+            .concat([{ v: evalTextLength(x), s: draft ? 5 : 4 },
             { v: draft ? '작성 중 (미제출)' : '제출', s: draft ? 6 : 2 }
-          ]);
+          ]));
         });
       });
 
@@ -631,28 +704,46 @@
           ? e('p', { className: 'whitespace-pre-wrap' }, v)
           : e('p', { className: 'text-slate-400' }, '(작성하지 않음)');
       };
-      const roles = roleLabels(act);
+      const labeled = function(key, label, v) {
+        return e('div', { key: key }, e('p', { className: 'font-bold mb-0.5 text-slate-800' }, label), text(v));
+      };
+      const roleKeys = ROLES.filter(function(r) { return act.roles && act.roles[r.key]; });
+      const types = act.perfTypes || [];
+      const peerNames = Object.keys(act.peerChecks || {});
       return e('div', { className: 'space-y-3' },
         box('1. 모둠 내 특별 활동 (해당자만)',
-          roles.length
-            ? [e('p', { key: 'r', className: 'font-bold text-violet-700' }, '맡은 역할: ' + roles.join(', ')), e('div', { key: 't' }, text(act.roleDetail))]
+          roleKeys.length
+            ? roleKeys.map(function(r) { return labeled(r.key, '[' + r.label + ']', (act.roleDetails || {})[r.key]); })
             : e('p', { className: 'text-slate-400' }, '특별 역할 없음')
         ),
         box('2. 개인 활동 내용',
-          [e('p', { key: 'p' }, e('span', { className: 'font-bold' }, '공연 형태: '), perfTypeText(act) || '(선택하지 않음)'),
-           e('div', { key: 'd' }, e('p', { className: 'font-bold mb-0.5' }, '공연·연습 과정에서 어려웠던 점'), text(act.difficulty))]
+          [e('p', { key: 'p' }, e('span', { className: 'font-bold' }, '공연 형태: '), perfTypeText(act) || '(선택하지 않음)')]
+            .concat(types.map(function(t) {
+              const d = (act.perfDetails || {})[t] || {};
+              return e('div', { key: 't-' + t, className: 'p-2.5 rounded-lg bg-violet-50 border border-violet-100 space-y-1.5' },
+                e('p', { className: 'font-black text-violet-800' }, perfTypeName(t, act)),
+                labeled('w', '어떤 공연을 했는지', d.what),
+                labeled('pr', '준비 과정', d.process)
+              );
+            }))
+            .concat(REFLECT_FIELDS.map(function(f) { return labeled(f.key, f.label, act[f.key]); }))
         ),
-        box('3. 모둠원 평가 (불참·불성실 모둠원)', text(act.peerIssue), props.forTeacher ? '선생님만 보는 내용' : '선생님만 봐요'),
+        box('3. 모둠원 평가 (불참·불성실 모둠원)',
+          peerNames.length || tlen(act.peerIssue)
+            ? peerNames.map(function(n) { return labeled('pc-' + n, n, act.peerChecks[n]); })
+                .concat(tlen(act.peerIssue) ? [labeled('pi', '직접 쓴 내용', act.peerIssue)] : [])
+            : e('p', { className: 'text-slate-400' }, '해당 모둠원 없음'),
+          props.forTeacher ? '선생님만 보는 내용' : '선생님만 봐요'),
         box('4. 다른 모둠 공연 평가',
           otherGroups(props.groupNo).map(function(g) {
             const ev = (act.evals || {})[String(g)] || {};
             const info = gi[groupKey(props.classNo, g)] || {};
-            return e('div', { key: g, className: 'p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-1' },
+            return e('div', { key: g, className: 'p-2.5 rounded-lg bg-slate-50 border border-slate-100 space-y-1.5' },
               e('div', { className: 'flex items-center justify-between gap-2 flex-wrap' },
                 e('p', { className: 'font-bold text-slate-800' }, g + '조' + (info.title ? ' · ' + info.title : '')),
                 e(Stars, { value: ev.stars || 0, readOnly: true, size: 'text-sm' })
               ),
-              text(ev.text)
+              EVAL_FIELDS.map(function(f) { return labeled(f.key, f.label, ev[f.key]); })
             );
           }),
           props.forTeacher ? '선생님만 보는 내용' : '선생님만 봐요'
@@ -1543,6 +1634,10 @@
         if (formDirtyRef.current) return;
         const base = Object.assign(emptyAct(), JSON.parse(JSON.stringify(myAct || {})));
         base.roles = Object.assign({ lead: false, cuesheet: false, editor: false }, base.roles || {});
+        base.roleDetails = Object.assign({ lead: '', cuesheet: '', editor: '' }, base.roleDetails || {});
+        base.perfTypes = (base.perfTypes || []).slice();
+        base.perfDetails = base.perfDetails || {};
+        base.peerChecks = base.peerChecks || {};
         base.evals = base.evals || {};
         setActForm(Object.assign(base, {
           classNo: (mySub && mySub.classNo) || guessClassFromId(myId) || '',
@@ -1558,24 +1653,81 @@
         formDirtyRef.current = true;
         setActForm(function(prev) {
           const evs = Object.assign({}, prev.evals || {});
-          evs[String(g)] = Object.assign({ stars: 0, text: '' }, evs[String(g)] || {}, patch);
+          evs[String(g)] = Object.assign({ stars: 0 }, evs[String(g)] || {}, patch);
           return Object.assign({}, prev, { evals: evs });
         });
+      };
+      // 1번: 역할별 활동 내용
+      const updateRoleDetail = function(key, v) {
+        formDirtyRef.current = true;
+        setActForm(function(prev) {
+          const d = Object.assign({}, prev.roleDetails || {}); d[key] = v;
+          return Object.assign({}, prev, { roleDetails: d });
+        });
+      };
+      // 2번: 공연 형태 여러 개 고르기 (다시 누르면 해제, 쓴 내용은 남겨 둠)
+      const togglePerfType = function(t) {
+        formDirtyRef.current = true;
+        setActForm(function(prev) {
+          const list = (prev.perfTypes || []).slice();
+          const i = list.indexOf(t);
+          if (i === -1) list.push(t); else list.splice(i, 1);
+          list.sort(function(a, b) { return PERF_TYPES.indexOf(a) - PERF_TYPES.indexOf(b); });
+          return Object.assign({}, prev, { perfTypes: list });
+        });
+      };
+      const updatePerfDetail = function(t, patch) {
+        formDirtyRef.current = true;
+        setActForm(function(prev) {
+          const d = Object.assign({}, prev.perfDetails || {});
+          d[t] = Object.assign({ what: '', process: '' }, d[t] || {}, patch);
+          return Object.assign({}, prev, { perfDetails: d });
+        });
+      };
+      // 3번: 모둠원 체크 (체크 해제하면 이유도 지움)
+      const togglePeer = function(name) {
+        formDirtyRef.current = true;
+        setActForm(function(prev) {
+          const pc = Object.assign({}, prev.peerChecks || {});
+          if (Object.prototype.hasOwnProperty.call(pc, name)) delete pc[name]; else pc[name] = '';
+          return Object.assign({}, prev, { peerChecks: pc });
+        });
+      };
+      const updatePeerReason = function(name, v) {
+        formDirtyRef.current = true;
+        setActForm(function(prev) {
+          const pc = Object.assign({}, prev.peerChecks || {}); pc[name] = v;
+          return Object.assign({}, prev, { peerChecks: pc });
+        });
+      };
+      // 내 조 친구 이름 (선생님이 적은 조원 이름에서 내 이름 빼기)
+      const groupMateNames = function(c, g) {
+        if (!c || !g) return [];
+        const me = currentUser && currentUser.role === 'student' ? String(currentUser.name || '').trim() : '';
+        return splitMembers((groupInfo[groupKey(c, g)] || {}).members).filter(function(n) { return n !== me; });
       };
 
       // 최종 제출 전에 빠진 것 찾기 (없으면 null)
       const findMissing = function(f) {
         if (!f.classNo || !f.groupNo) return '맨 위에서 내 반과 조를 먼저 골라 주세요.';
         const r = f.roles || {};
-        if ((r.lead || r.cuesheet || r.editor) && !(f.roleDetail || '').trim()) return '1번: 맡은 역할의 활동 내용을 적어 주세요.';
-        if (!f.perfType) return '2번: 공연 형태를 골라 주세요.';
-        if (f.perfType === PERF_ETC && !(f.perfTypeEtc || '').trim()) return '2번: 공연 형태를 직접 적어 주세요.';
-        if (!(f.difficulty || '').trim()) return '2번: 공연·연습 과정에서 어려웠던 점을 적어 주세요.';
+        for (let i = 0; i < ROLES.length; i++) {
+          if (r[ROLES[i].key] && !tlen((f.roleDetails || {})[ROLES[i].key])) return '1번: [' + ROLES[i].label + '] 역할에서 한 활동 내용을 적어 주세요.';
+        }
+        if (!(f.perfTypes || []).length) return '2번: 공연 형태를 하나 이상 골라 주세요.';
+        if (f.perfTypes.indexOf(PERF_ETC) !== -1 && !tlen(f.perfEtc)) return '2번: 기타 공연 형태가 무엇인지 적어 주세요.';
+        const pl = perfTextLength(f);
+        if (pl < PERF_MIN_LEN) return '2번: 개인 활동 내용을 모두 더해 ' + PERF_MIN_LEN + '자 이상 써 주세요. (지금 ' + pl + '자)';
+        const names = Object.keys(f.peerChecks || {});
+        for (let i = 0; i < names.length; i++) {
+          if (!tlen(f.peerChecks[names[i]])) return '3번: ' + names[i] + ' 친구를 고른 이유를 적어 주세요. (해당 없으면 체크를 풀어 주세요)';
+        }
         const others = otherGroups(f.groupNo);
         for (let i = 0; i < others.length; i++) {
           const ev = (f.evals || {})[String(others[i])] || {};
           if (!ev.stars) return '4번: ' + others[i] + '조 공연의 별점을 골라 주세요.';
-          if ((ev.text || '').trim().length < EVAL_MIN_LEN) return '4번: ' + others[i] + '조 공연 평가를 ' + EVAL_MIN_LEN + '자 이상 써 주세요. (예술성·독창성·개선점)';
+          const el = evalTextLength(ev);
+          if (el < EVAL_MIN_LEN) return '4번: ' + others[i] + '조 평가를 4칸 모두 더해 ' + EVAL_MIN_LEN + '자 이상 써 주세요. (지금 ' + el + '자)';
         }
         return null;
       };
@@ -1605,16 +1757,37 @@
           const evals = {};
           otherGroups(f.groupNo).forEach(function(g) {
             const ev = (f.evals || {})[String(g)];
-            if (ev && (ev.stars || (ev.text || '').trim())) evals[String(g)] = { stars: ev.stars || 0, text: ev.text || '' };
+            if (evalHasContent(ev)) {
+              const keep = { stars: ev.stars || 0 };
+              EVAL_FIELDS.forEach(function(x) { keep[x.key] = ev[x.key] || ''; });
+              evals[String(g)] = keep;
+            }
           });
           const r = f.roles || {};
-          const hasRole = !!(r.lead || r.cuesheet || r.editor);
+          const roleDetails = {};
+          ROLES.forEach(function(x) { if (r[x.key]) roleDetails[x.key] = (f.roleDetails || {})[x.key] || ''; });
+          const perfTypes = (f.perfTypes || []).slice();
+          const perfDetails = {};
+          perfTypes.forEach(function(t) {
+            const d = (f.perfDetails || {})[t] || {};
+            perfDetails[t] = { what: d.what || '', process: d.process || '' };
+          });
+          // 고른 조의 조원 명단에 있는 이름만 남김 (조를 바꾼 경우)
+          const mates = groupMateNames(f.classNo, f.groupNo);
+          const peerChecks = {};
+          Object.keys(f.peerChecks || {}).forEach(function(n) {
+            if (!mates.length || mates.indexOf(n) !== -1) peerChecks[n] = f.peerChecks[n] || '';
+          });
           const act = {
             roles: { lead: !!r.lead, cuesheet: !!r.cuesheet, editor: !!r.editor },
-            roleDetail: hasRole ? (f.roleDetail || '') : '',
-            perfType: f.perfType || '',
-            perfTypeEtc: f.perfType === PERF_ETC ? (f.perfTypeEtc || '') : '',
+            roleDetails: roleDetails,
+            perfTypes: perfTypes,
+            perfEtc: perfTypes.indexOf(PERF_ETC) !== -1 ? (f.perfEtc || '') : '',
+            perfDetails: perfDetails,
             difficulty: f.difficulty || '',
+            episode: f.episode || '',
+            completion: f.completion || '',
+            peerChecks: peerChecks,
             peerIssue: f.peerIssue || '',
             evals: evals,
             isSubmitted: !!isSubmit,
@@ -2195,7 +2368,6 @@
         const myGroup = Number(f.groupNo) || null;
         const myClass = Number(f.classNo) || null;
         const alreadySubmitted = !isPreview && myAct && myAct.isSubmitted;
-        const hasRole = !!(f.roles && (f.roles.lead || f.roles.cuesheet || f.roles.editor));
         return e('div', { className: 'space-y-4' },
           sectionCard('0', '내 반과 조 고르기', '몇 조인지 모르겠으면 아래 공연 제목과 조원 이름을 보고 찾으세요. (선생님이 입력한 내용입니다)',
             [
@@ -2225,48 +2397,94 @@
                     updateForm({ roles: roles });
                   }, r.desc);
                 })
-              ),
-              hasRole && e('div', { key: 't' },
-                e('p', { className: 'text-xs font-bold text-slate-700 mb-1' }, '맡은 역할에서 한 활동 내용'),
-                textArea(f.roleDetail, function(v) { updateForm({ roleDetail: v }); }, '예) 총괄로서 친구들의 공연 순서를 정할 때 분위기가 이어지도록 …', 4)
               )
-            ],
+            ].concat(ROLES.filter(function(r) { return f.roles && f.roles[r.key]; }).map(function(r) {
+              return e('div', { key: 't-' + r.key },
+                e('p', { className: 'text-xs font-bold text-slate-700 mb-1' }, '[' + r.label + '] 역할에서 한 활동 내용'),
+                textArea((f.roleDetails || {})[r.key], function(v) { updateRoleDetail(r.key, v); }, r.example, 3)
+              );
+            })),
             { badge: '해당자만', badgeClass: 'bg-slate-200 text-slate-600' }
           ),
 
-          sectionCard('2', '개인 활동 내용 작성 (모두)', '내가 한 공연의 형태를 고르고, 공연 과정이나 연습 과정에서 어려웠던 점을 적어 주세요.',
-            [
-              e('div', { key: 'p', className: 'space-y-1.5' },
-                e('p', { className: 'text-xs font-bold text-slate-700' }, '공연 형태'),
-                e('div', { className: 'flex flex-wrap gap-2' }, PERF_TYPES.map(function(t) {
-                  return chip(t, t, f.perfType === t, function() { updateForm({ perfType: t }); });
-                })),
-                f.perfType === PERF_ETC && e('input', {
-                  type: 'text', value: f.perfTypeEtc || '', placeholder: '공연 형태를 직접 적어 주세요 (예: 개인 랩, 모둠 뮤지컬)',
-                  onChange: function(ev) { updateForm({ perfTypeEtc: ev.target.value }); },
-                  className: 'w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400'
-                })
-              ),
-              e('div', { key: 'd' },
-                e('p', { className: 'text-xs font-bold text-slate-700 mb-1' }, '공연 과정 또는 연습 과정에서 어려웠던 점'),
-                textArea(f.difficulty, function(v) { updateForm({ difficulty: v }); }, '어떤 점이 어려웠고, 어떻게 해결하려고 노력했는지 구체적으로 적어 주세요.', 5)
-              )
-            ],
-            { badge: '필수', badgeClass: 'bg-violet-100 text-violet-800' }
-          ),
+          (function() {
+            const pl = perfTextLength(f);
+            const types = f.perfTypes || [];
+            return sectionCard('2', '개인 활동 내용 작성 (모두)', '내가 한 공연 형태를 모두 고르고(여러 개 가능), 형태마다 어떤 공연을 했는지와 준비 과정을 적어 주세요. 아래 칸까지 모두 더해 ' + PERF_MIN_LEN + '자 이상 써야 제출됩니다.',
+              [
+                e('div', { key: 'p', className: 'space-y-1.5' },
+                  e('p', { className: 'text-xs font-bold text-slate-700' }, '공연 형태 (여러 개 고를 수 있어요)'),
+                  e('div', { className: 'flex flex-wrap gap-2' }, PERF_TYPES.map(function(t) {
+                    const on = types.indexOf(t) !== -1;
+                    return chip(t, (on ? '☑ ' : '☐ ') + t, on, function() { togglePerfType(t); });
+                  }))
+                )
+              ].concat(types.map(function(t) {
+                const d = (f.perfDetails || {})[t] || {};
+                return e('div', { key: 'pt-' + t, className: 'p-3 rounded-xl border border-violet-200 bg-violet-50 space-y-2' },
+                  e('p', { className: 'text-sm font-black text-violet-800' }, t === PERF_ETC ? '기타 공연' : t),
+                  t === PERF_ETC && e('input', {
+                    type: 'text', value: f.perfEtc || '', placeholder: '어떤 형태인지 적어 주세요 (예: 개인 랩, 모둠 뮤지컬)',
+                    onChange: function(ev) { updateForm({ perfEtc: ev.target.value }); },
+                    className: 'w-full p-2.5 border border-slate-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-400'
+                  }),
+                  e('div', null,
+                    e('p', { className: 'text-xs font-bold text-slate-700 mb-1' }, '어떤 공연을 했나요?'),
+                    textArea(d.what, function(v) { updatePerfDetail(t, { what: v }); }, '예) 아이유의 「너의 의미」를 친구와 함께 2부 화음으로 불렀다.', 2)
+                  ),
+                  e('div', null,
+                    e('p', { className: 'text-xs font-bold text-slate-700 mb-1' }, '어떤 과정으로 준비했나요?'),
+                    textArea(d.process, function(v) { updatePerfDetail(t, { process: v }); }, '예) 곡 고르기 → 파트 나누기 → 점심시간마다 연습 → 녹음해서 들어 보며 고치기', 3)
+                  )
+                );
+              })).concat(REFLECT_FIELDS.map(function(fl) {
+                return e('div', { key: fl.key },
+                  e('p', { className: 'text-xs font-bold text-slate-700 mb-1' }, fl.label),
+                  textArea(f[fl.key], function(v) { const pp = {}; pp[fl.key] = v; updateForm(pp); }, fl.ph, 3)
+                );
+              })).concat([
+                e('p', { key: 'len', className: 'text-2xs text-right font-bold ' + (pl >= PERF_MIN_LEN ? 'text-emerald-600' : 'text-amber-600') },
+                  '2번 전체 ' + pl + '자' + (pl < PERF_MIN_LEN ? ' (' + PERF_MIN_LEN + '자 이상 써 주세요)' : ' ✓'))
+              ]),
+              { badge: '필수', badgeClass: 'bg-violet-100 text-violet-800' }
+            );
+          })(),
 
-          sectionCard('3', '모둠원 평가', '공연 준비에 참여하지 않았거나 성실하지 않았던 모둠원이 있다면 이름과 이유를 적어 주세요. 없으면 비워 두고 넘어가도 됩니다.',
-            textArea(f.peerIssue, function(v) { updateForm({ peerIssue: v }); }, '예) 홍길동 — 연습에 세 번 연속 오지 않음', 3),
-            { badge: '선생님만 봐요', badgeClass: 'bg-rose-100 text-rose-700', border: 'border-rose-200' }
-          ),
+          (function() {
+            const mates = groupMateNames(myClass, myGroup);
+            const checks = f.peerChecks || {};
+            return sectionCard('3', '모둠원 평가', '공연 준비에 참여하지 않았거나 성실하지 않았던 모둠원이 있다면 이름을 체크하고 이유를 적어 주세요. 없으면 넘어가도 됩니다.',
+              !myClass || !myGroup
+                ? e('p', { className: 'text-xs text-slate-500 p-3 rounded-xl bg-slate-50' }, '맨 위에서 내 반과 조를 고르면 우리 조 친구 이름이 나타납니다.')
+                : [
+                    mates.length
+                      ? e('div', { key: 'm', className: 'flex flex-wrap gap-2' }, mates.map(function(n) {
+                          const on = Object.prototype.hasOwnProperty.call(checks, n);
+                          return chip('m-' + n, (on ? '☑ ' : '☐ ') + n, on, function() { togglePeer(n); });
+                        }))
+                      : e('p', { key: 'm', className: 'text-2xs text-slate-500' }, '선생님이 아직 우리 조 조원 이름을 입력하지 않았어요. 해당 친구가 있다면 아래 칸에 이름과 이유를 적어 주세요.')
+                  ].concat(Object.keys(checks).map(function(n) {
+                    return e('div', { key: 'r-' + n },
+                      e('p', { className: 'text-xs font-bold text-slate-700 mb-1' }, n + ' — 이유'),
+                      textArea(checks[n], function(v) { updatePeerReason(n, v); }, '예) 연습에 세 번 연속 오지 않았고 맡은 파트를 준비하지 않았다.', 2)
+                    );
+                  })).concat([
+                    e('div', { key: 'etc' },
+                      e('p', { className: 'text-xs font-bold text-slate-700 mb-1' }, mates.length ? '목록에 없는 친구가 있다면 (이름과 이유)' : '이름과 이유'),
+                      textArea(f.peerIssue, function(v) { updateForm({ peerIssue: v }); }, '예) 홍길동 — 연습에 세 번 연속 오지 않음', 2)
+                    )
+                  ]),
+              { badge: '선생님만 봐요', badgeClass: 'bg-rose-100 text-rose-700', border: 'border-rose-200' }
+            );
+          })(),
 
-          sectionCard('4', '다른 모둠 공연 평가', '같은 반 다른 모둠의 공연을 보고 예술성·독창성·개선점을 종합해서 한 글로 써 주세요. 별점(1~5)도 함께 매겨 주세요. (' + EVAL_MIN_LEN + '자 이상)',
+          sectionCard('4', '다른 모둠 공연 평가', '같은 반 다른 모둠의 공연을 보고 별점(1~5)을 매긴 뒤 예술성·독창성·개선점·기타 의견을 적어 주세요. 한 모둠당 4칸을 모두 더해 ' + EVAL_MIN_LEN + '자 이상 써야 합니다.',
             !myClass || !myGroup
               ? e('p', { className: 'text-xs text-slate-500 p-3 rounded-xl bg-slate-50' }, '맨 위에서 내 반과 조를 고르면 평가할 모둠 4개가 나타납니다.')
               : otherGroups(myGroup).map(function(g) {
                   const gi = groupInfo[groupKey(myClass, g)] || {};
                   const ev = (f.evals || {})[String(g)] || {};
-                  const len = (ev.text || '').trim().length;
+                  const len = evalTextLength(ev);
                   return e('div', { key: g, className: 'p-3 sm:p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2.5' },
                     e('div', { className: 'flex items-center justify-between gap-2 flex-wrap' },
                       e('p', { className: 'text-sm font-black text-slate-900' }, myClass + '반 ' + g + '조', gi.title && e('span', { className: 'font-bold text-violet-700 ml-1.5' }, '· ' + gi.title)),
@@ -2274,8 +2492,15 @@
                     ),
                     e(VideoBox, { url: gi.video_url }),
                     e('div', null, e(Stars, { value: ev.stars || 0, onChange: function(v) { updateEval(g, { stars: v }); } })),
-                    textArea(ev.text, function(v) { updateEval(g, { text: v }); }, '예술성(표현·완성도), 독창성(새로운 아이디어), 개선점(더 좋아지려면)을 종합해서 써 주세요.', 4),
-                    e('p', { className: 'text-2xs text-right ' + (len >= EVAL_MIN_LEN ? 'text-slate-400' : 'text-amber-600') }, len + '자' + (len < EVAL_MIN_LEN ? ' (' + EVAL_MIN_LEN + '자 이상)' : ''))
+                    e('div', { className: 'grid grid-cols-1 sm:grid-cols-2 gap-2' },
+                      EVAL_FIELDS.map(function(fl) {
+                        return e('div', { key: fl.key },
+                          e('p', { className: 'text-xs font-bold text-slate-700 mb-1' }, fl.label),
+                          textArea(ev[fl.key], function(v) { const pp = {}; pp[fl.key] = v; updateEval(g, pp); }, fl.ph, 3)
+                        );
+                      })
+                    ),
+                    e('p', { className: 'text-2xs text-right font-bold ' + (len >= EVAL_MIN_LEN ? 'text-emerald-600' : 'text-amber-600') }, '4칸 합계 ' + len + '자' + (len < EVAL_MIN_LEN ? ' (' + EVAL_MIN_LEN + '자 이상)' : ' ✓'))
                   );
                 }),
             { badge: '선생님만 봐요', badgeClass: 'bg-rose-100 text-rose-700', border: 'border-rose-200' }
@@ -2713,7 +2938,14 @@
                     e('p', { className: 'font-bold text-slate-700' }, x.studentName + ' (' + x.studentId + ') · ' + x.fromGroup + '조', !x.submitted && e('span', { className: 'ml-1.5 text-2xs text-amber-700' }, '작성 중')),
                     e(Stars, { value: x.stars, readOnly: true, size: 'text-sm' })
                   ),
-                  e('p', { className: 'whitespace-pre-wrap leading-relaxed text-slate-700' }, x.text || '(글 없음)')
+                  e('div', { className: 'grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1' },
+                    EVAL_FIELDS.map(function(fl) {
+                      return e('div', { key: fl.key, className: 'p-2 rounded-lg bg-slate-50' },
+                        e('p', { className: 'text-2xs font-black text-violet-700 mb-0.5' }, fl.label),
+                        e('p', { className: 'whitespace-pre-wrap leading-relaxed text-slate-700' }, tlen(x.ev[fl.key]) ? x.ev[fl.key] : '(작성하지 않음)')
+                      );
+                    })
+                  )
                 );
               })
             ),
