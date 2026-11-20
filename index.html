@@ -1729,6 +1729,16 @@
       };
 
       // 모둠 정보 저장 (patch: title, video_url, members, plan_score, perform_score 중 일부). 성공하면 저장된 행
+      const lastGroupErrorRef = useRef(null);
+      // 저장 실패 이유를 선생님이 알 수 있게 안내
+      const groupErrorText = function() {
+        const er = lastGroupErrorRef.current;
+        if (!er) return '잠시 후 다시 시도해 주세요.';
+        const msg = String(er.message || '');
+        if (er.code === 'PGRST205' || er.code === '42P01' || /group_info/.test(msg) && /schema cache|does not exist/.test(msg)) return '서버에 모둠 정보 표(group_info)가 없습니다. 통합 SQL을 실행했는지 확인해 주세요.';
+        if (er.code === '42501' || /permission denied|row-level security/i.test(msg)) return '서버에서 모둠 정보 표에 쓸 권한이 없습니다. 안내된 권한 SQL을 실행해 주세요.';
+        return '(' + (er.code ? er.code + ': ' : '') + msg + ')';
+      };
       const saveGroupRow = async function(c, g, patch) {
         const cur = groupInfoRef.current[groupKey(c, g)] || {};
         const row = {
@@ -1742,8 +1752,11 @@
         const res = await withTimeout(supabaseClient.from('group_info').upsert(row, { onConflict: 'class_no,group_no' }), SERVER_CHECK_MS);
         if (res.error) {
           if (isNetworkFailure(res)) markOffline();
+          lastGroupErrorRef.current = res.error;
+          console.error('group_info save error:', res.error);
           return null;
         }
+        lastGroupErrorRef.current = null;
         mergeGroupRows([row]);
         return row;
       };
@@ -1806,7 +1819,7 @@
             const curPerform = isNum(gi.perform_score) ? gi.perform_score : null;
             if (plan !== curPlan || perform !== curPerform) {
               const row = await saveGroupRow(c, g, { plan_score: plan, perform_score: perform });
-              if (!row) { showToast('모둠 점수를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.', 5000); return; }
+              if (!row) { showToast('모둠 점수를 저장하지 못했습니다. ' + groupErrorText(), 9000); return; }
               const members = Object.keys(allSubmissions).filter(function(id) { const s = allSubmissions[id]; return s && Number(s.classNo) === Number(c) && Number(s.groupNo) === Number(g); }).length;
               notes.push(c + '반 ' + g + '조 모둠 점수 저장 (조원 ' + Math.max(members, 1) + '명에게 적용)');
               const rel = await releaseGroupConfirmations(c, g, studentId);
@@ -1921,7 +1934,7 @@
           const plan = scoreVal(d.plan), perform = scoreVal(d.perform);
           const scoreChanged = plan !== (isNum(gi.plan_score) ? gi.plan_score : null) || perform !== (isNum(gi.perform_score) ? gi.perform_score : null);
           const row = await saveGroupRow(c, g, { title: (d.title || '').trim(), video_url: url, members: (d.members || '').trim(), plan_score: plan, perform_score: perform });
-          if (!row) { showToast('저장하지 못했습니다. 잠시 후 다시 시도해 주세요.', 5000); return; }
+          if (!row) { showToast('저장하지 못했습니다. ' + groupErrorText(), 9000); return; }
           setGroupDrafts(function(prev) { const up = Object.assign({}, prev); delete up[k]; return up; });
           let rel = [];
           if (scoreChanged) rel = await releaseGroupConfirmations(c, g, null);
