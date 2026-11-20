@@ -44,8 +44,8 @@
 
     // --- Supabase 클라우드 DB 클라이언트 초기화 ---
     // ▼▼▼ 새 Supabase 프로젝트의 Project URL과 Publishable(anon) key로 바꿔 주세요 ▼▼▼
-    const SUPABASE_URL = 'https://sb_publishable_NGLrFiTX8EPBsbjrbktnUQ_x8HvuFxm.supabase.co';
-    const SUPABASE_ANON_KEY = 'https://sndubacqffibxxdodjbe.supabase.co';
+    const SUPABASE_URL = 'https://sndubacqffibxxdodjbe.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_NGLrFiTX8EPBsbjrbktnUQ_x8HvuFxm';
     let supabaseClient = null;
     try {
       if (!OFFLINE_MODE && window.supabase && /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(SUPABASE_URL)) {
