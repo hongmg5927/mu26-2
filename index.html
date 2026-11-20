@@ -681,8 +681,8 @@
       const [teacherAuth, setTeacherAuth] = useState(function() {
         try {
           const s = localStorage.getItem('perf_teacher_auth');
-          return s ? JSON.parse(s) : { id: 'admin', pw: '123456' };
-        } catch(err) { return { id: 'admin', pw: '123456' }; }
+          return s ? JSON.parse(s) : { id: 'klidaum', pw: '103106' };
+        } catch(err) { return { id: 'klidaum', pw: '103106' }; }
       });
 
       const [teacherSubTab, setTeacherSubTab] = useState('submissions');
@@ -1371,7 +1371,7 @@
       const localTeacherLogin = function(id, pw, allowDefault, note) {
         let saved = null;
         try { const s0 = localStorage.getItem('perf_teacher_auth'); saved = s0 ? JSON.parse(s0) : null; } catch (err) { saved = null; }
-        const auth = saved || (allowDefault ? { id: 'admin', pw: '123456' } : null);
+        const auth = saved || (allowDefault ? { id: 'klidaum', pw: '103106' } : null);
         if (auth && id === auth.id && pw === auth.pw) {
           finishTeacherLogin(id);
           if (note) showToast(note, 6000);
